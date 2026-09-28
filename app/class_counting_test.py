@@ -26,7 +26,12 @@ while True:
         print("ERROR: Could not read a frame.")
         break
 
-    results = model.track(frame, persist=True, verbose=False)
+    results = model.track(
+    frame,
+    persist=True,
+    verbose=False,
+    tracker="bytetrack.yaml",
+)
     result = results[0]
 
     annotated_frame = result.plot()
