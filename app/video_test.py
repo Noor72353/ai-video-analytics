@@ -1,16 +1,19 @@
 import cv2
-from ultralytics import YOLO
+
+from app.detector import ObjectDetector
+from app.tracker import ObjectTracker
+
+from app.analytics.counter import ObjectCounter
+from app.analytics.line_crossing import LineCrossingAnalyzer
+from app.analytics.zone import ZoneAnalyzer
+from app.analytics.trajectory import TrajectoryAnalyzer
+from app.analytics.dwell_time import DwellTimeAnalyzer
 
 
-# Load YOLO model
-model = YOLO("yolo11n.pt")
+# ---------------------------------------------------------
+# CLASSES WE WANT TO TRACK
+# ---------------------------------------------------------
 
-
-# Video file
-VIDEO_PATH = "test_video.mp4"
-
-
-# Classes we want to track
 TARGET_CLASSES = {
     0: "Person",
     1: "Bicycle",
@@ -21,103 +24,113 @@ TARGET_CLASSES = {
 }
 
 
-# Line position
+# ---------------------------------------------------------
+# CONFIGURATION
+# ---------------------------------------------------------
+
+VIDEO_PATH = "test_video.mp4"
+
 LINE_POSITION = 0.50
 
-
-# Zone position
 ZONE_X1_RATIO = 0.20
 ZONE_Y1_RATIO = 0.20
 ZONE_X2_RATIO = 0.80
 ZONE_Y2_RATIO = 0.80
 
-
-# Track previous positions
-previous_y = {}
-
-# Store recent movement points for each tracked object
-trajectories = {}
-
-# Maximum number of points in each trajectory
-MAX_TRAJECTORY_LENGTH = 30
-
-
-# Track whether each object was previously inside the zone
-previous_inside = {}
-
-
-# Track when each object entered the zone
-zone_entry_time = {}
-
-
-# Entry / Exit counters
-entry_counts = {
-    class_id: 0
-    for class_id in TARGET_CLASSES
-}
-
-exit_counts = {
-    class_id: 0
-    for class_id in TARGET_CLASSES
-}
-
-
-# Zone Entry / Exit counters
-zone_entry_counts = {
-    class_id: 0
-    for class_id in TARGET_CLASSES
-}
-
-zone_exit_counts = {
-    class_id: 0
-    for class_id in TARGET_CLASSES
-}
-
-
-# Prevent duplicate line crossings
-counted_crossings = set()
-
-
-# Display size
 DISPLAY_WIDTH = 1000
 DISPLAY_HEIGHT = 600
 
 
-# Open video
-video = cv2.VideoCapture(VIDEO_PATH)
+# ---------------------------------------------------------
+# DETECTOR AND TRACKER
+# ---------------------------------------------------------
+
+detector = ObjectDetector("yolo11n.pt")
+
+tracker = ObjectTracker(
+    detector.model
+)
+
+
+# ---------------------------------------------------------
+# ANALYTICS MODULES
+# ---------------------------------------------------------
+
+counter = ObjectCounter(
+    TARGET_CLASSES
+)
+
+line_analyzer = LineCrossingAnalyzer(
+    TARGET_CLASSES,
+    LINE_POSITION
+)
+
+zone_analyzer = ZoneAnalyzer(
+    TARGET_CLASSES
+)
+
+trajectory_analyzer = TrajectoryAnalyzer(
+    max_length=30
+)
+
+dwell_analyzer = DwellTimeAnalyzer()
+
+
+# ---------------------------------------------------------
+# OPEN VIDEO
+# ---------------------------------------------------------
+
+video = cv2.VideoCapture(
+    VIDEO_PATH
+)
 
 
 if not video.isOpened():
-    print(f"ERROR: Could not open video: {VIDEO_PATH}")
+
+    print(
+        f"ERROR: Could not open video: {VIDEO_PATH}"
+    )
+
     raise SystemExit
 
+
+# ---------------------------------------------------------
+# MAIN LOOP
+# ---------------------------------------------------------
 
 while True:
 
     success, frame = video.read()
 
+
     if not success:
+
         print("Video finished.")
+
         break
 
 
-    # Original video dimensions
+    # -----------------------------------------------------
+    # ORIGINAL VIDEO DIMENSIONS
+    # -----------------------------------------------------
+
     frame_height = frame.shape[0]
+
     frame_width = frame.shape[1]
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # LINE POSITION
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     line_y_original = int(
         frame_height * LINE_POSITION
     )
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # ZONE POSITION
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     zone_x1 = int(
         frame_width * ZONE_X1_RATIO
@@ -136,47 +149,63 @@ while True:
     )
 
 
-    # ---------------------------------------------------------
-    # YOLO TRACKING
-    # ---------------------------------------------------------
+    zone = (
+        zone_x1,
+        zone_y1,
+        zone_x2,
+        zone_y2,
+    )
 
-    results = model.track(
+
+    # -----------------------------------------------------
+    # YOLO TRACKING
+    # -----------------------------------------------------
+
+    results = tracker.track(
         frame,
-        persist=True,
-        verbose=False,
-        tracker="bytetrack.yaml",
-        classes=list(TARGET_CLASSES.keys()),
+        classes=list(
+            TARGET_CLASSES.keys()
+        ),
     )
 
 
     annotated_frame = results[0].plot()
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # CLASS COUNTS
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
-    class_counts = {
-        class_id: 0
-        for class_id in TARGET_CLASSES
-    }
+    counter.reset()
+
+
+    detected_classes = []
 
 
     if results[0].boxes is not None:
 
         detected_classes = (
-            results[0].boxes.cls.int().tolist()
+            results[0]
+            .boxes
+            .cls
+            .int()
+            .tolist()
         )
 
-        for class_id in detected_classes:
 
-            if class_id in class_counts:
-                class_counts[class_id] += 1
+    counter.update(
+        detected_classes
+    )
 
 
-    # ---------------------------------------------------------
-    # ZONE COUNTS
-    # ---------------------------------------------------------
+    class_counts = (
+        counter.get_counts()
+    )
+
+
+    # -----------------------------------------------------
+    # TRACKED OBJECT ANALYTICS
+    # -----------------------------------------------------
 
     zone_counts = {
         class_id: 0
@@ -184,9 +213,8 @@ while True:
     }
 
 
-    # ---------------------------------------------------------
-    # TRACKING
-    # ---------------------------------------------------------
+    dwell_times = {}
+
 
     if (
         results[0].boxes is not None
@@ -194,28 +222,47 @@ while True:
     ):
 
         track_ids = (
-            results[0].boxes.id.int().tolist()
+            results[0]
+            .boxes
+            .id
+            .int()
+            .tolist()
         )
+
 
         class_ids = (
-            results[0].boxes.cls.int().tolist()
+            results[0]
+            .boxes
+            .cls
+            .int()
+            .tolist()
         )
+
 
         boxes = (
-            results[0].boxes.xyxy.tolist()
+            results[0]
+            .boxes
+            .xyxy
+            .tolist()
         )
 
 
-        for track_id, class_id, box in zip(
-            track_ids,
-            class_ids,
-            boxes,
-        ):
+        centers = []
+
+        center_ys = []
+
+        inside_states = []
+
+
+        # -------------------------------------------------
+        # CALCULATE CENTERS
+        # -------------------------------------------------
+
+        for box in boxes:
 
             x1, y1, x2, y2 = box
 
 
-            # Object center
             center_x = int(
                 (x1 + x2) / 2
             )
@@ -225,86 +272,83 @@ while True:
             )
 
 
-                        # -------------------------------------------------
-            # OBJECT TRAJECTORY
-            # -------------------------------------------------
-
-            if track_id not in trajectories:
-
-                trajectories[track_id] = []
-
-
-            trajectories[track_id].append(
+            centers.append(
                 (center_x, center_y)
             )
 
-
-            # Keep only recent movement points
-            if (
-                len(trajectories[track_id])
-                > MAX_TRAJECTORY_LENGTH
-            ):
-
-                trajectories[track_id].pop(0)
+            center_ys.append(
+                center_y
+            )
 
 
-            # -------------------------------------------------
-            # LINE CROSSING
-            # -------------------------------------------------
+        # -------------------------------------------------
+        # LINE CROSSING ANALYTICS
+        # -------------------------------------------------
 
-            if track_id in previous_y:
-
-                old_y = previous_y[track_id]
-
-
-                # Top -> Bottom = Entry
-                if (
-                    old_y < line_y_original
-                    and center_y >= line_y_original
-                ):
-
-                    crossing = (
-                        track_id,
-                        "entry",
-                    )
+        line_analyzer.update(
+            track_ids,
+            class_ids,
+            center_ys,
+            line_y_original,
+        )
 
 
-                    if crossing not in counted_crossings:
-
-                        entry_counts[class_id] += 1
-
-                        counted_crossings.add(
-                            crossing
-                        )
+        entry_counts = (
+            line_analyzer
+            .get_entry_counts()
+        )
 
 
-                # Bottom -> Top = Exit
-                elif (
-                    old_y > line_y_original
-                    and center_y <= line_y_original
-                ):
-
-                    crossing = (
-                        track_id,
-                        "exit",
-                    )
+        exit_counts = (
+            line_analyzer
+            .get_exit_counts()
+        )
 
 
-                    if crossing not in counted_crossings:
+        # -------------------------------------------------
+        # ZONE ANALYTICS
+        # -------------------------------------------------
 
-                        exit_counts[class_id] += 1
+        zone_counts = (
+            zone_analyzer.update(
+                track_ids,
+                class_ids,
+                centers,
+                zone,
+            )
+        )
 
-                        counted_crossings.add(
-                            crossing
-                        )
+
+        zone_entry_counts = (
+            zone_analyzer
+            .get_entry_counts()
+        )
 
 
-            previous_y[track_id] = center_y
+        zone_exit_counts = (
+            zone_analyzer
+            .get_exit_counts()
+        )
 
 
-            # -------------------------------------------------
-            # ZONE DETECTION
-            # -------------------------------------------------
+        # -------------------------------------------------
+        # TRAJECTORY ANALYTICS
+        # -------------------------------------------------
+
+        trajectory_analyzer.update(
+            track_ids,
+            centers,
+        )
+
+
+        # -------------------------------------------------
+        # DETERMINE ZONE STATES
+        # -------------------------------------------------
+
+        for center in centers:
+
+            center_x, center_y = center
+
 
             inside_zone = (
                 zone_x1 <= center_x <= zone_x2
@@ -313,89 +357,85 @@ while True:
             )
 
 
-            # Current object is inside
+            inside_states.append(
+                inside_zone
+            )
+
+
+        # -------------------------------------------------
+        # DWELL TIME ANALYTICS
+        # -------------------------------------------------
+
+        dwell_times = (
+            dwell_analyzer.update(
+                track_ids,
+                inside_states,
+            )
+        )
+
+
+        # -------------------------------------------------
+        # DRAW ZONE CENTER POINTS
+        # -------------------------------------------------
+
+        for center, inside_zone in zip(
+            centers,
+            inside_states,
+        ):
+
             if inside_zone:
 
-                zone_counts[class_id] += 1
-
-
-                # Draw center point
                 cv2.circle(
                     annotated_frame,
-                    (center_x, center_y),
+                    center,
                     7,
                     (255, 0, 255),
                     -1,
                 )
 
 
-            # -------------------------------------------------
-            # ZONE ENTRY / EXIT
-            # -------------------------------------------------
+    else:
 
-            if track_id in previous_inside:
-
-                was_inside = previous_inside[track_id]
-
-
-                # Outside -> Inside
-                if (
-                    not was_inside
-                    and inside_zone
-                ):
-
-                    zone_entry_counts[class_id] += 1
+        entry_counts = (
+            line_analyzer
+            .get_entry_counts()
+        )
 
 
-                # Inside -> Outside
-                elif (
-                    was_inside
-                    and not inside_zone
-                ):
-
-                    zone_exit_counts[class_id] += 1
-
-            # -------------------------------------------------
-            # ZONE DWELL TIME
-            # -------------------------------------------------
-
-            if inside_zone:
-
-                # Start timer when object first enters
-                if track_id not in zone_entry_time:
-
-                    zone_entry_time[track_id] = cv2.getTickCount()
+        exit_counts = (
+            line_analyzer
+            .get_exit_counts()
+        )
 
 
-                # Calculate time spent inside zone
-                elapsed_ticks = (
-                    cv2.getTickCount()
-                    - zone_entry_time[track_id]
-                )
-
-                elapsed_seconds = (
-                    elapsed_ticks
-                    / cv2.getTickFrequency()
-                )
-
-            else:
-
-                # Remove timer when object leaves
-                if track_id in zone_entry_time:
-
-                    del zone_entry_time[track_id]
+        zone_entry_counts = (
+            zone_analyzer
+            .get_entry_counts()
+        )
 
 
-            # Save current zone state
-            previous_inside[track_id] = inside_zone
+        zone_exit_counts = (
+            zone_analyzer
+            .get_exit_counts()
+        )
 
-        # ---------------------------------------------------------
+
+    # -----------------------------------------------------
     # DRAW OBJECT TRAJECTORIES
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
+
+    trajectories = (
+        trajectory_analyzer
+        .get_all_trajectories()
+    )
+
 
     for track_id, points in trajectories.items():
 
-        for i in range(1, len(points)):
+        for i in range(
+            1,
+            len(points),
+        ):
 
             cv2.line(
                 annotated_frame,
@@ -405,9 +445,10 @@ while True:
                 2,
             )
 
-    # ---------------------------------------------------------
+
+    # -----------------------------------------------------
     # RESIZE
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     annotated_frame = cv2.resize(
         annotated_frame,
@@ -418,7 +459,10 @@ while True:
     )
 
 
-    # Coordinate scaling
+    # -----------------------------------------------------
+    # COORDINATE SCALING
+    # -----------------------------------------------------
+
     scale_x = (
         DISPLAY_WIDTH / frame_width
     )
@@ -450,9 +494,9 @@ while True:
     )
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # DRAW LINE
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     cv2.line(
         annotated_frame,
@@ -466,9 +510,9 @@ while True:
     )
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # DRAW ZONE
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     cv2.rectangle(
         annotated_frame,
@@ -499,16 +543,20 @@ while True:
     )
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # LIVE CLASS COUNTS
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     y_position = 35
 
 
-    for class_id, class_name in TARGET_CLASSES.items():
+    for class_id, class_name in (
+        TARGET_CLASSES.items()
+    ):
 
-        count = class_counts[class_id]
+        count = class_counts[
+            class_id
+        ]
 
 
         cv2.putText(
@@ -525,18 +573,24 @@ while True:
         y_position += 35
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # LINE ENTRY / EXIT
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     y_position = 270
 
 
-    for class_id, class_name in TARGET_CLASSES.items():
+    for class_id, class_name in (
+        TARGET_CLASSES.items()
+    ):
 
-        entry = entry_counts[class_id]
+        entry = entry_counts[
+            class_id
+        ]
 
-        exit_count = exit_counts[class_id]
+        exit_count = exit_counts[
+            class_id
+        ]
 
 
         cv2.putText(
@@ -556,29 +610,24 @@ while True:
 
         y_position += 30
 
-        # ---------------------------------------------------------
+
+    # -----------------------------------------------------
     # ZONE DWELL TIME DISPLAY
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     dwell_y_position = 430
 
 
-    for track_id, start_time in zone_entry_time.items():
-
-        elapsed_ticks = (
-            cv2.getTickCount()
-            - start_time
-        )
-
-        elapsed_seconds = (
-            elapsed_ticks
-            / cv2.getTickFrequency()
-        )
-
+    for track_id, elapsed_seconds in (
+        dwell_times.items()
+    ):
 
         cv2.putText(
             annotated_frame,
-            f"ID {track_id}: {elapsed_seconds:.1f}s",
+            (
+                f"ID {track_id}: "
+                f"{elapsed_seconds:.1f}s"
+            ),
             (650, dwell_y_position),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
@@ -590,9 +639,9 @@ while True:
         dwell_y_position += 25
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # ZONE OBJECT COUNT
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     total_zone_objects = sum(
         zone_counts.values()
@@ -601,7 +650,10 @@ while True:
 
     cv2.putText(
         annotated_frame,
-        f"Objects in Zone: {total_zone_objects}",
+        (
+            f"Objects in Zone: "
+            f"{total_zone_objects}"
+        ),
         (20, 470),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.9,
@@ -610,9 +662,9 @@ while True:
     )
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # ZONE ENTRY / EXIT
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     cv2.putText(
         annotated_frame,
@@ -628,14 +680,23 @@ while True:
     y_position = 535
 
 
-    for class_id, class_name in TARGET_CLASSES.items():
+    for class_id, class_name in (
+        TARGET_CLASSES.items()
+    ):
 
-        zone_entry = zone_entry_counts[class_id]
+        zone_entry = zone_entry_counts[
+            class_id
+        ]
 
-        zone_exit = zone_exit_counts[class_id]
+        zone_exit = zone_exit_counts[
+            class_id
+        ]
 
 
-        if zone_entry > 0 or zone_exit > 0:
+        if (
+            zone_entry > 0
+            or zone_exit > 0
+        ):
 
             cv2.putText(
                 annotated_frame,
@@ -655,9 +716,9 @@ while True:
             y_position += 22
 
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
     # DISPLAY
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     cv2.imshow(
         "AI Video Analytics - Video Test",
@@ -665,13 +726,24 @@ while True:
     )
 
 
-    key = cv2.waitKey(1) & 0xFF
+    key = (
+        cv2.waitKey(1)
+        & 0xFF
+    )
 
 
-    if key == ord("q") or key == 27:
+    if (
+        key == ord("q")
+        or key == 27
+    ):
+
         break
 
 
-# Cleanup
+# ---------------------------------------------------------
+# CLEANUP
+# ---------------------------------------------------------
+
 video.release()
+
 cv2.destroyAllWindows()
