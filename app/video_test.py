@@ -40,6 +40,10 @@ previous_y = {}
 previous_inside = {}
 
 
+# Track when each object entered the zone
+zone_entry_time = {}
+
+
 # Entry / Exit counters
 entry_counts = {
     class_id: 0
@@ -322,6 +326,36 @@ while True:
 
                     zone_exit_counts[class_id] += 1
 
+            # -------------------------------------------------
+            # ZONE DWELL TIME
+            # -------------------------------------------------
+
+            if inside_zone:
+
+                # Start timer when object first enters
+                if track_id not in zone_entry_time:
+
+                    zone_entry_time[track_id] = cv2.getTickCount()
+
+
+                # Calculate time spent inside zone
+                elapsed_ticks = (
+                    cv2.getTickCount()
+                    - zone_entry_time[track_id]
+                )
+
+                elapsed_seconds = (
+                    elapsed_ticks
+                    / cv2.getTickFrequency()
+                )
+
+            else:
+
+                # Remove timer when object leaves
+                if track_id in zone_entry_time:
+
+                    del zone_entry_time[track_id]
+
 
             # Save current zone state
             previous_inside[track_id] = inside_zone
@@ -477,6 +511,39 @@ while True:
 
 
         y_position += 30
+
+        # ---------------------------------------------------------
+    # ZONE DWELL TIME DISPLAY
+    # ---------------------------------------------------------
+
+    dwell_y_position = 430
+
+
+    for track_id, start_time in zone_entry_time.items():
+
+        elapsed_ticks = (
+            cv2.getTickCount()
+            - start_time
+        )
+
+        elapsed_seconds = (
+            elapsed_ticks
+            / cv2.getTickFrequency()
+        )
+
+
+        cv2.putText(
+            annotated_frame,
+            f"ID {track_id}: {elapsed_seconds:.1f}s",
+            (650, dwell_y_position),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 0, 255),
+            2,
+        )
+
+
+        dwell_y_position += 25
 
 
     # ---------------------------------------------------------
