@@ -21,15 +21,22 @@ TARGET_CLASSES = {
 }
 
 
-# Line position as a percentage of video height
+# Line position
 LINE_POSITION = 0.50
 
 
-# Track previous center positions
+# Zone coordinates in the ORIGINAL video
+ZONE_X1_RATIO = 0.20
+ZONE_Y1_RATIO = 0.20
+ZONE_X2_RATIO = 0.80
+ZONE_Y2_RATIO = 0.80
+
+
+# Track previous positions
 previous_y = {}
 
 
-# Entry and Exit counters
+# Entry / Exit counters
 entry_counts = {
     class_id: 0
     for class_id in TARGET_CLASSES
@@ -41,8 +48,13 @@ exit_counts = {
 }
 
 
-# Prevent counting the same crossing repeatedly
+# Prevent duplicate crossings
 counted_crossings = set()
+
+
+# Display size
+DISPLAY_WIDTH = 1000
+DISPLAY_HEIGHT = 600
 
 
 # Open video
@@ -54,14 +66,8 @@ if not video.isOpened():
     raise SystemExit
 
 
-# Display size
-DISPLAY_WIDTH = 1000
-DISPLAY_HEIGHT = 600
-
-
 while True:
 
-    # Read next frame
     success, frame = video.read()
 
     if not success:
@@ -69,16 +75,45 @@ while True:
         break
 
 
-    # Get original frame dimensions
+    # Original video dimensions
     frame_height = frame.shape[0]
     frame_width = frame.shape[1]
 
 
-    # Calculate crossing line in ORIGINAL coordinates
-    line_y_original = int(frame_height * LINE_POSITION)
+    # ---------------------------------------------------------
+    # LINE POSITION
+    # ---------------------------------------------------------
+
+    line_y_original = int(
+        frame_height * LINE_POSITION
+    )
 
 
-    # Run YOLO tracking
+    # ---------------------------------------------------------
+    # ZONE POSITION
+    # ---------------------------------------------------------
+
+    zone_x1 = int(
+        frame_width * ZONE_X1_RATIO
+    )
+
+    zone_y1 = int(
+        frame_height * ZONE_Y1_RATIO
+    )
+
+    zone_x2 = int(
+        frame_width * ZONE_X2_RATIO
+    )
+
+    zone_y2 = int(
+        frame_height * ZONE_Y2_RATIO
+    )
+
+
+    # ---------------------------------------------------------
+    # YOLO TRACKING
+    # ---------------------------------------------------------
+
     results = model.track(
         frame,
         persist=True,
@@ -88,7 +123,6 @@ while True:
     )
 
 
-    # Draw YOLO annotations
     annotated_frame = results[0].plot()
 
 
@@ -115,7 +149,17 @@ while True:
 
 
     # ---------------------------------------------------------
-    # ENTRY / EXIT DETECTION
+    # ZONE COUNTS
+    # ---------------------------------------------------------
+
+    zone_counts = {
+        class_id: 0
+        for class_id in TARGET_CLASSES
+    }
+
+
+    # ---------------------------------------------------------
+    # TRACKING + LINE + ZONE
     # ---------------------------------------------------------
 
     if (
@@ -145,22 +189,26 @@ while True:
             x1, y1, x2, y2 = box
 
 
-            # Center of tracked object
+            # Object center
+            center_x = int(
+                (x1 + x2) / 2
+            )
+
             center_y = int(
                 (y1 + y2) / 2
             )
 
 
-            # Check whether this object was seen before
+            # -------------------------------------------------
+            # LINE CROSSING
+            # -------------------------------------------------
+
             if track_id in previous_y:
 
                 old_y = previous_y[track_id]
 
 
-                # ---------------------------------------------
-                # TOP -> BOTTOM = ENTRY
-                # ---------------------------------------------
-
+                # Top -> Bottom
                 if (
                     old_y < line_y_original
                     and center_y >= line_y_original
@@ -181,10 +229,7 @@ while True:
                         )
 
 
-                # ---------------------------------------------
-                # BOTTOM -> TOP = EXIT
-                # ---------------------------------------------
-
+                # Bottom -> Top
                 elif (
                     old_y > line_y_original
                     and center_y <= line_y_original
@@ -205,12 +250,37 @@ while True:
                         )
 
 
-            # Save current position
             previous_y[track_id] = center_y
 
 
+            # -------------------------------------------------
+            # ZONE DETECTION
+            # -------------------------------------------------
+
+            inside_zone = (
+                zone_x1 <= center_x <= zone_x2
+                and
+                zone_y1 <= center_y <= zone_y2
+            )
+
+
+            if inside_zone:
+
+                zone_counts[class_id] += 1
+
+
+                # Draw center point
+                cv2.circle(
+                    annotated_frame,
+                    (center_x, center_y),
+                    7,
+                    (255, 0, 255),
+                    -1,
+                )
+
+
     # ---------------------------------------------------------
-    # RESIZE FOR DISPLAY
+    # RESIZE
     # ---------------------------------------------------------
 
     annotated_frame = cv2.resize(
@@ -222,14 +292,40 @@ while True:
     )
 
 
-    # Calculate line position for DISPLAY coordinates
+    # Convert original coordinates to display coordinates
+    scale_x = (
+        DISPLAY_WIDTH / frame_width
+    )
+
+    scale_y = (
+        DISPLAY_HEIGHT / frame_height
+    )
+
+
     line_y_display = int(
-        DISPLAY_HEIGHT * LINE_POSITION
+        line_y_original * scale_y
+    )
+
+
+    zone_x1_display = int(
+        zone_x1 * scale_x
+    )
+
+    zone_y1_display = int(
+        zone_y1 * scale_y
+    )
+
+    zone_x2_display = int(
+        zone_x2 * scale_x
+    )
+
+    zone_y2_display = int(
+        zone_y2 * scale_y
     )
 
 
     # ---------------------------------------------------------
-    # DRAW CROSSING LINE
+    # DRAW LINE
     # ---------------------------------------------------------
 
     cv2.line(
@@ -245,7 +341,40 @@ while True:
 
 
     # ---------------------------------------------------------
-    # DISPLAY LIVE CLASS COUNTS
+    # DRAW ZONE
+    # ---------------------------------------------------------
+
+    cv2.rectangle(
+        annotated_frame,
+        (
+            zone_x1_display,
+            zone_y1_display,
+        ),
+        (
+            zone_x2_display,
+            zone_y2_display,
+        ),
+        (0, 255, 255),
+        3,
+    )
+
+
+    cv2.putText(
+        annotated_frame,
+        "ANALYTICS ZONE",
+        (
+            zone_x1_display,
+            zone_y1_display - 10,
+        ),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (0, 255, 255),
+        2,
+    )
+
+
+    # ---------------------------------------------------------
+    # LIVE CLASS COUNTS
     # ---------------------------------------------------------
 
     y_position = 35
@@ -271,7 +400,7 @@ while True:
 
 
     # ---------------------------------------------------------
-    # DISPLAY ENTRY / EXIT COUNTS
+    # ENTRY / EXIT
     # ---------------------------------------------------------
 
     y_position = 270
@@ -287,8 +416,8 @@ while True:
         cv2.putText(
             annotated_frame,
             (
-                f"{class_name}  "
-                f"Entry: {entry}  "
+                f"{class_name} "
+                f"Entry: {entry} "
                 f"Exit: {exit_count}"
             ),
             (20, y_position),
@@ -303,7 +432,54 @@ while True:
 
 
     # ---------------------------------------------------------
-    # SHOW VIDEO
+    # ZONE COUNTS
+    # ---------------------------------------------------------
+
+    y_position = 470
+
+
+    total_zone_objects = sum(
+        zone_counts.values()
+    )
+
+
+    cv2.putText(
+        annotated_frame,
+        f"Objects in Zone: {total_zone_objects}",
+        (20, y_position),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.9,
+        (255, 0, 255),
+        3,
+    )
+
+
+    y_position += 30
+
+
+    for class_id, class_name in TARGET_CLASSES.items():
+
+        zone_count = zone_counts[class_id]
+
+
+        if zone_count > 0:
+
+            cv2.putText(
+                annotated_frame,
+                f"{class_name} in Zone: {zone_count}",
+                (20, y_position),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 0, 255),
+                2,
+            )
+
+
+            y_position += 25
+
+
+    # ---------------------------------------------------------
+    # DISPLAY
     # ---------------------------------------------------------
 
     cv2.imshow(
@@ -312,11 +488,9 @@ while True:
     )
 
 
-    # Keyboard controls
     key = cv2.waitKey(1) & 0xFF
 
 
-    # Q or ESC = quit
     if key == ord("q") or key == 27:
         break
 
