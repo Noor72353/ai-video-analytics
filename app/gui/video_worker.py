@@ -6,6 +6,7 @@ from app.analytics.counter import ObjectCounter
 from app.analytics.line_crossing import LineCrossingAnalyzer
 from app.analytics.zone import ZoneAnalyzer
 from app.analytics.dwell_time import DwellTimeAnalyzer
+from app.analytics.trajectory import TrajectoryAnalyzer
 from app.detector import ObjectDetector
 from app.tracker import ObjectTracker
 
@@ -17,6 +18,7 @@ class VideoWorker(QThread):
     line_crossing_ready = Signal(object, object)
     zone_analytics_ready = Signal(object, object, object)
     dwell_time_ready = Signal(object)
+    trajectory_ready = Signal(object)
     status_changed = Signal(str)
     finished_processing = Signal()
 
@@ -66,6 +68,13 @@ class VideoWorker(QThread):
         self.dwell_time_analyzer = (
             DwellTimeAnalyzer(
                 self.target_classes
+            )
+        )
+
+        # Trajectory analytics
+        self.trajectory_analyzer = (
+            TrajectoryAnalyzer(
+                max_length=30
             )
         )
 
@@ -129,7 +138,6 @@ class VideoWorker(QThread):
             # ZONE
             # -------------------------------------------------
 
-            # Large central rectangular analytics zone.
             zone_width = int(
                 frame_width * 0.70
             )
@@ -328,10 +336,58 @@ class VideoWorker(QThread):
             )
 
             # -------------------------------------------------
+            # TRAJECTORY ANALYTICS
+            # -------------------------------------------------
+
+            self.trajectory_analyzer.update(
+                track_ids,
+                centers,
+            )
+
+            trajectories = (
+                self.trajectory_analyzer
+                .get_all_trajectories()
+            )
+
+            self.trajectory_ready.emit(
+                trajectories
+            )
+
+            # -------------------------------------------------
             # YOLO ANNOTATION
             # -------------------------------------------------
 
             annotated_frame = result.plot()
+
+            # -------------------------------------------------
+            # DRAW TRAJECTORIES
+            # -------------------------------------------------
+
+            for trajectory in trajectories.values():
+
+                if len(trajectory) < 2:
+                    continue
+
+                for index in range(
+                    1,
+                    len(trajectory),
+                ):
+
+                    previous_point = (
+                        trajectory[index - 1]
+                    )
+
+                    current_point = (
+                        trajectory[index]
+                    )
+
+                    cv2.line(
+                        annotated_frame,
+                        previous_point,
+                        current_point,
+                        (0, 255, 255),
+                        3,
+                    )
 
             # -------------------------------------------------
             # DRAW ENTRY / EXIT LINE

@@ -818,6 +818,10 @@ class MainWindow(QMainWindow):
             self.update_dwell_time
         )
 
+        self.video_worker.trajectory_ready.connect(
+            self.update_trajectory
+        )
+
         self.video_worker.status_changed.connect(
             self.update_status
         )
@@ -856,6 +860,14 @@ class MainWindow(QMainWindow):
 
         self.dwell_time.setText(
             "Maximum Dwell Time: 0.0 s"
+        )
+
+        self.trajectory_status.setText(
+            "Tracked Trajectories: 0"
+        )
+
+        self.trajectory_length.setText(
+            "Trail Length: 30 points"
         )
 
         self.video_worker.start()
@@ -1106,6 +1118,28 @@ class MainWindow(QMainWindow):
         )
 
     # -----------------------------------------------------
+    # UPDATE TRAJECTORY
+    # -----------------------------------------------------
+
+    def update_trajectory(
+        self,
+        trajectories,
+    ):
+
+        tracked_trajectories = len(
+            trajectories
+        )
+
+        self.trajectory_status.setText(
+            "Tracked Trajectories: "
+            f"{tracked_trajectories}"
+        )
+
+        self.trajectory_length.setText(
+            "Trail Length: 30 points"
+        )
+
+    # -----------------------------------------------------
     # UPDATE STATUS
     # -----------------------------------------------------
 
@@ -1164,6 +1198,14 @@ class MainWindow(QMainWindow):
 
         self.dwell_time.setText(
             "Maximum Dwell Time: 0.0 s"
+        )
+
+        self.trajectory_status.setText(
+            "Tracked Trajectories: 0"
+        )
+
+        self.trajectory_length.setText(
+            "Trail Length: 30 points"
         )
 
     # -----------------------------------------------------
