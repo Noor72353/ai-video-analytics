@@ -802,6 +802,14 @@ class MainWindow(QMainWindow):
             self.update_frame
         )
 
+        self.video_worker.object_counts_ready.connect(
+            self.update_object_counts
+        )
+
+        self.video_worker.line_crossing_ready.connect(
+            self.update_line_crossing
+        )
+
         self.video_worker.status_changed.connect(
             self.update_status
         )
@@ -831,7 +839,7 @@ class MainWindow(QMainWindow):
         )
 
         self.analytics_status.setText(
-            "Analytics: Ready"
+            "Analytics: Starting"
         )
 
         self.video_worker.start()
@@ -887,6 +895,89 @@ class MainWindow(QMainWindow):
             "Detection: Active"
         )
 
+        self.analytics_status.setText(
+            "Analytics: Active"
+        )
+
+    # -----------------------------------------------------
+    # UPDATE OBJECT COUNTS
+    # -----------------------------------------------------
+
+    def update_object_counts(
+        self,
+        counts,
+    ):
+
+        self.person_count.setText(
+            f"Person: {counts.get(0, 0)}"
+        )
+
+        self.bicycle_count.setText(
+            f"Bicycle: {counts.get(1, 0)}"
+        )
+
+        self.car_count.setText(
+            f"Car: {counts.get(2, 0)}"
+        )
+
+        self.motorcycle_count.setText(
+            f"Motorcycle: {counts.get(3, 0)}"
+        )
+
+        self.bus_count.setText(
+            f"Bus: {counts.get(5, 0)}"
+        )
+
+        self.truck_count.setText(
+            f"Truck: {counts.get(7, 0)}"
+        )
+
+    # -----------------------------------------------------
+    # UPDATE LINE CROSSING
+    # -----------------------------------------------------
+
+    def update_line_crossing(
+        self,
+        entry_counts,
+        exit_counts,
+    ):
+
+        self.line_person.setText(
+            "Person: Entry "
+            f"{entry_counts.get(0, 0)} | Exit "
+            f"{exit_counts.get(0, 0)}"
+        )
+
+        self.line_bicycle.setText(
+            "Bicycle: Entry "
+            f"{entry_counts.get(1, 0)} | Exit "
+            f"{exit_counts.get(1, 0)}"
+        )
+
+        self.line_car.setText(
+            "Car: Entry "
+            f"{entry_counts.get(2, 0)} | Exit "
+            f"{exit_counts.get(2, 0)}"
+        )
+
+        self.line_motorcycle.setText(
+            "Motorcycle: Entry "
+            f"{entry_counts.get(3, 0)} | Exit "
+            f"{exit_counts.get(3, 0)}"
+        )
+
+        self.line_bus.setText(
+            "Bus: Entry "
+            f"{entry_counts.get(5, 0)} | Exit "
+            f"{exit_counts.get(5, 0)}"
+        )
+
+        self.line_truck.setText(
+            "Truck: Entry "
+            f"{entry_counts.get(7, 0)} | Exit "
+            f"{exit_counts.get(7, 0)}"
+        )
+
     # -----------------------------------------------------
     # UPDATE STATUS
     # -----------------------------------------------------
@@ -936,6 +1027,10 @@ class MainWindow(QMainWindow):
             "Detection: Ready"
         )
 
+        self.analytics_status.setText(
+            "Analytics: Ready"
+        )
+
     # -----------------------------------------------------
     # VIDEO FINISHED
     # -----------------------------------------------------
@@ -981,4 +1076,3 @@ def run_gui():
     sys.exit(
         app.exec()
     )
-
