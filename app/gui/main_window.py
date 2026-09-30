@@ -138,7 +138,7 @@ class MainWindow(QMainWindow):
         )
 
         # -------------------------------------------------
-        # ANALYTICS SCROLL AREA
+        # SCROLL AREA
         # -------------------------------------------------
 
         scroll_area = QScrollArea()
@@ -628,11 +628,11 @@ class MainWindow(QMainWindow):
         )
 
         self.dwell_status = QLabel(
-            "Active Objects: 0"
+            "Tracked Classes: 0"
         )
 
         self.dwell_time = QLabel(
-            "Dwell Time: 0.0 s"
+            "Maximum Dwell Time: 0.0 s"
         )
 
         content_layout.addWidget(
@@ -810,6 +810,14 @@ class MainWindow(QMainWindow):
             self.update_line_crossing
         )
 
+        self.video_worker.zone_analytics_ready.connect(
+            self.update_zone_analytics
+        )
+
+        self.video_worker.dwell_time_ready.connect(
+            self.update_dwell_time
+        )
+
         self.video_worker.status_changed.connect(
             self.update_status
         )
@@ -840,6 +848,14 @@ class MainWindow(QMainWindow):
 
         self.analytics_status.setText(
             "Analytics: Starting"
+        )
+
+        self.dwell_status.setText(
+            "Tracked Classes: 0"
+        )
+
+        self.dwell_time.setText(
+            "Maximum Dwell Time: 0.0 s"
         )
 
         self.video_worker.start()
@@ -979,6 +995,117 @@ class MainWindow(QMainWindow):
         )
 
     # -----------------------------------------------------
+    # UPDATE ZONE ANALYTICS
+    # -----------------------------------------------------
+
+    def update_zone_analytics(
+        self,
+        zone_counts,
+        zone_entry_counts,
+        zone_exit_counts,
+    ):
+
+        # Current total objects inside zone
+        zone_total = sum(
+            zone_counts.values()
+        )
+
+        self.zone_total.setText(
+            f"Objects in Zone: {zone_total}"
+        )
+
+        # Current objects by class
+        self.zone_person.setText(
+            f"Person: {zone_counts.get(0, 0)}"
+        )
+
+        self.zone_bicycle.setText(
+            f"Bicycle: {zone_counts.get(1, 0)}"
+        )
+
+        self.zone_car.setText(
+            f"Car: {zone_counts.get(2, 0)}"
+        )
+
+        self.zone_motorcycle.setText(
+            f"Motorcycle: {zone_counts.get(3, 0)}"
+        )
+
+        self.zone_bus.setText(
+            f"Bus: {zone_counts.get(5, 0)}"
+        )
+
+        self.zone_truck.setText(
+            f"Truck: {zone_counts.get(7, 0)}"
+        )
+
+        # Zone Entry / Exit
+        self.zone_person_movement.setText(
+            "Person: In "
+            f"{zone_entry_counts.get(0, 0)} | Out "
+            f"{zone_exit_counts.get(0, 0)}"
+        )
+
+        self.zone_bicycle_movement.setText(
+            "Bicycle: In "
+            f"{zone_entry_counts.get(1, 0)} | Out "
+            f"{zone_exit_counts.get(1, 0)}"
+        )
+
+        self.zone_car_movement.setText(
+            "Car: In "
+            f"{zone_entry_counts.get(2, 0)} | Out "
+            f"{zone_exit_counts.get(2, 0)}"
+        )
+
+        self.zone_motorcycle_movement.setText(
+            "Motorcycle: In "
+            f"{zone_entry_counts.get(3, 0)} | Out "
+            f"{zone_exit_counts.get(3, 0)}"
+        )
+
+        self.zone_bus_movement.setText(
+            "Bus: In "
+            f"{zone_entry_counts.get(5, 0)} | Out "
+            f"{zone_exit_counts.get(5, 0)}"
+        )
+
+        self.zone_truck_movement.setText(
+            "Truck: In "
+            f"{zone_entry_counts.get(7, 0)} | Out "
+            f"{zone_exit_counts.get(7, 0)}"
+        )
+
+    # -----------------------------------------------------
+    # UPDATE DWELL TIME
+    # -----------------------------------------------------
+
+    def update_dwell_time(
+        self,
+        dwell_times,
+    ):
+
+        tracked_classes = sum(
+            1
+            for dwell_time in dwell_times.values()
+            if dwell_time > 0
+        )
+
+        maximum_dwell_time = max(
+            dwell_times.values(),
+            default=0.0,
+        )
+
+        self.dwell_status.setText(
+            f"Tracked Classes: {tracked_classes}"
+        )
+
+        self.dwell_time.setText(
+            "Maximum Dwell Time: "
+            f"{maximum_dwell_time:.1f} s"
+        )
+
+    # -----------------------------------------------------
     # UPDATE STATUS
     # -----------------------------------------------------
 
@@ -1029,6 +1156,14 @@ class MainWindow(QMainWindow):
 
         self.analytics_status.setText(
             "Analytics: Ready"
+        )
+
+        self.dwell_status.setText(
+            "Tracked Classes: 0"
+        )
+
+        self.dwell_time.setText(
+            "Maximum Dwell Time: 0.0 s"
         )
 
     # -----------------------------------------------------
