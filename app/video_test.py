@@ -35,6 +35,12 @@ ZONE_Y2_RATIO = 0.80
 # Track previous positions
 previous_y = {}
 
+# Store recent movement points for each tracked object
+trajectories = {}
+
+# Maximum number of points in each trajectory
+MAX_TRAJECTORY_LENGTH = 30
+
 
 # Track whether each object was previously inside the zone
 previous_inside = {}
@@ -219,6 +225,29 @@ while True:
             )
 
 
+                        # -------------------------------------------------
+            # OBJECT TRAJECTORY
+            # -------------------------------------------------
+
+            if track_id not in trajectories:
+
+                trajectories[track_id] = []
+
+
+            trajectories[track_id].append(
+                (center_x, center_y)
+            )
+
+
+            # Keep only recent movement points
+            if (
+                len(trajectories[track_id])
+                > MAX_TRAJECTORY_LENGTH
+            ):
+
+                trajectories[track_id].pop(0)
+
+
             # -------------------------------------------------
             # LINE CROSSING
             # -------------------------------------------------
@@ -360,6 +389,21 @@ while True:
             # Save current zone state
             previous_inside[track_id] = inside_zone
 
+        # ---------------------------------------------------------
+    # DRAW OBJECT TRAJECTORIES
+    # ---------------------------------------------------------
+
+    for track_id, points in trajectories.items():
+
+        for i in range(1, len(points)):
+
+            cv2.line(
+                annotated_frame,
+                points[i - 1],
+                points[i],
+                (0, 255, 255),
+                2,
+            )
 
     # ---------------------------------------------------------
     # RESIZE
