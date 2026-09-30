@@ -25,7 +25,7 @@ TARGET_CLASSES = {
 LINE_POSITION = 0.50
 
 
-# Zone coordinates in the ORIGINAL video
+# Zone position
 ZONE_X1_RATIO = 0.20
 ZONE_Y1_RATIO = 0.20
 ZONE_X2_RATIO = 0.80
@@ -34,6 +34,10 @@ ZONE_Y2_RATIO = 0.80
 
 # Track previous positions
 previous_y = {}
+
+
+# Track whether each object was previously inside the zone
+previous_inside = {}
 
 
 # Entry / Exit counters
@@ -48,7 +52,19 @@ exit_counts = {
 }
 
 
-# Prevent duplicate crossings
+# Zone Entry / Exit counters
+zone_entry_counts = {
+    class_id: 0
+    for class_id in TARGET_CLASSES
+}
+
+zone_exit_counts = {
+    class_id: 0
+    for class_id in TARGET_CLASSES
+}
+
+
+# Prevent duplicate line crossings
 counted_crossings = set()
 
 
@@ -159,7 +175,7 @@ while True:
 
 
     # ---------------------------------------------------------
-    # TRACKING + LINE + ZONE
+    # TRACKING
     # ---------------------------------------------------------
 
     if (
@@ -208,7 +224,7 @@ while True:
                 old_y = previous_y[track_id]
 
 
-                # Top -> Bottom
+                # Top -> Bottom = Entry
                 if (
                     old_y < line_y_original
                     and center_y >= line_y_original
@@ -229,7 +245,7 @@ while True:
                         )
 
 
-                # Bottom -> Top
+                # Bottom -> Top = Exit
                 elif (
                     old_y > line_y_original
                     and center_y <= line_y_original
@@ -264,6 +280,7 @@ while True:
             )
 
 
+            # Current object is inside
             if inside_zone:
 
                 zone_counts[class_id] += 1
@@ -279,6 +296,37 @@ while True:
                 )
 
 
+            # -------------------------------------------------
+            # ZONE ENTRY / EXIT
+            # -------------------------------------------------
+
+            if track_id in previous_inside:
+
+                was_inside = previous_inside[track_id]
+
+
+                # Outside -> Inside
+                if (
+                    not was_inside
+                    and inside_zone
+                ):
+
+                    zone_entry_counts[class_id] += 1
+
+
+                # Inside -> Outside
+                elif (
+                    was_inside
+                    and not inside_zone
+                ):
+
+                    zone_exit_counts[class_id] += 1
+
+
+            # Save current zone state
+            previous_inside[track_id] = inside_zone
+
+
     # ---------------------------------------------------------
     # RESIZE
     # ---------------------------------------------------------
@@ -292,7 +340,7 @@ while True:
     )
 
 
-    # Convert original coordinates to display coordinates
+    # Coordinate scaling
     scale_x = (
         DISPLAY_WIDTH / frame_width
     )
@@ -400,7 +448,7 @@ while True:
 
 
     # ---------------------------------------------------------
-    # ENTRY / EXIT
+    # LINE ENTRY / EXIT
     # ---------------------------------------------------------
 
     y_position = 270
@@ -432,11 +480,8 @@ while True:
 
 
     # ---------------------------------------------------------
-    # ZONE COUNTS
+    # ZONE OBJECT COUNT
     # ---------------------------------------------------------
-
-    y_position = 470
-
 
     total_zone_objects = sum(
         zone_counts.values()
@@ -446,7 +491,7 @@ while True:
     cv2.putText(
         annotated_frame,
         f"Objects in Zone: {total_zone_objects}",
-        (20, y_position),
+        (20, 470),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.9,
         (255, 0, 255),
@@ -454,28 +499,49 @@ while True:
     )
 
 
-    y_position += 30
+    # ---------------------------------------------------------
+    # ZONE ENTRY / EXIT
+    # ---------------------------------------------------------
+
+    cv2.putText(
+        annotated_frame,
+        "ZONE ENTRY / EXIT",
+        (20, 505),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (255, 0, 255),
+        2,
+    )
+
+
+    y_position = 535
 
 
     for class_id, class_name in TARGET_CLASSES.items():
 
-        zone_count = zone_counts[class_id]
+        zone_entry = zone_entry_counts[class_id]
+
+        zone_exit = zone_exit_counts[class_id]
 
 
-        if zone_count > 0:
+        if zone_entry > 0 or zone_exit > 0:
 
             cv2.putText(
                 annotated_frame,
-                f"{class_name} in Zone: {zone_count}",
+                (
+                    f"{class_name}: "
+                    f"In {zone_entry} "
+                    f"Out {zone_exit}"
+                ),
                 (20, y_position),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
+                0.65,
                 (255, 0, 255),
                 2,
             )
 
 
-            y_position += 25
+            y_position += 22
 
 
     # ---------------------------------------------------------
