@@ -209,7 +209,6 @@ Prepare the project for final presentation, portfolio use, GitHub, and future de
 
 ## Final Project Structure
 
-```text
 ai-video-analytics/
 │
 ├── app/
@@ -245,7 +244,6 @@ The application was packaged as a standalone Windows desktop executable using Py
 
 The final executable was built using:
 
-```powershell
 python -m PyInstaller --noconfirm --clean --windowed --name AI-Video-Analytics app\main.py
 
 ---
@@ -258,20 +256,16 @@ The final Windows release was packaged and tested successfully.
 
 The portable application is available in:
 
-```text
 release/
 └── AI-Video-Analytics/
     ├── AI-Video-Analytics.exe
     ├── yolo11n.pt
     ├── README.md
     └── _internal/
-```
 
 The portable version can be run directly using:
 
-```text
 AI-Video-Analytics.exe
-```
 
 ### Windows Installer
 
@@ -279,10 +273,8 @@ A proper Windows installer was created using **Inno Setup**.
 
 Installer:
 
-```text
 release/
 └── AI-Video-Analytics-Setup.exe
-```
 
 The installer:
 
@@ -295,9 +287,7 @@ The installer:
 
 The installer configuration is maintained in:
 
-```text
 AI-Video-Analytics.iss
-```
 
 ### Final Release Verification
 
@@ -317,8 +307,6 @@ The following were successfully verified:
 
 For distributing the application to another Windows computer, use:
 
-```text
 release\AI-Video-Analytics-Setup.exe
-```
 
 The portable release folder is retained as an alternative distribution and backup package.
