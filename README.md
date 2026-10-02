@@ -247,3 +247,21 @@ The final executable was built using:
 
 ```powershell
 python -m PyInstaller --noconfirm --clean --windowed --name AI-Video-Analytics app\main.py
+
+---
+
+## Phase 9 — Final Release
+
+The project was prepared as a standalone Windows release package.
+
+### Release Package
+
+The final release directory contains:
+
+```text
+release/
+└── AI-Video-Analytics/
+    ├── AI-Video-Analytics.exe
+    ├── yolo11n.pt
+    ├── README.md
+    └── _internal/
