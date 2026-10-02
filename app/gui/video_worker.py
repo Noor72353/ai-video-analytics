@@ -19,20 +19,32 @@ class VideoWorker(QThread):
     zone_analytics_ready = Signal(object, object, object)
     dwell_time_ready = Signal(object)
     trajectory_ready = Signal(object)
+
     status_changed = Signal(str)
+
+    duration_ready = Signal(float)
+    position_ready = Signal(float)
+
     finished_processing = Signal()
 
     def __init__(
         self,
-        video_path,
+        source,
         model_path="yolo11n.pt",
         parent=None,
     ):
         super().__init__(parent)
 
-        self.video_path = video_path
+        self.source = source
         self.model_path = model_path
+
         self.running = True
+        self.paused = False
+
+        self.seek_requested = False
+        self.seek_position = 0.0
+
+        self.video_duration = 0.0
 
         self.detector = ObjectDetector(
             self.model_path
@@ -43,35 +55,30 @@ class VideoWorker(QThread):
         )
 
         self.target_classes = [
-            0,  # Person
-            1,  # Bicycle
-            2,  # Car
-            3,  # Motorcycle
-            5,  # Bus
-            7,  # Truck
+            0,
+            1,
+            2,
+            3,
+            5,
+            7,
         ]
 
-        # Object counting
         self.counter = ObjectCounter(
             self.target_classes
         )
 
-        # Line crossing
         self.line_crossing = None
 
-        # Zone analytics
         self.zone_analyzer = ZoneAnalyzer(
             self.target_classes
         )
 
-        # Dwell time analytics
         self.dwell_time_analyzer = (
             DwellTimeAnalyzer(
                 self.target_classes
             )
         )
 
-        # Trajectory analytics
         self.trajectory_analyzer = (
             TrajectoryAnalyzer(
                 max_length=30
@@ -87,23 +94,56 @@ class VideoWorker(QThread):
         )
 
         video = cv2.VideoCapture(
-            self.video_path
+            self.source
         )
 
         if not video.isOpened():
 
             print(
-                "WORKER: Could not open video"
+                "WORKER: Could not open source"
             )
 
             self.status_changed.emit(
-                "ERROR: Could not open video"
+                "ERROR: Could not open source"
             )
 
             self.finished_processing.emit()
+
             return
 
-        print("WORKER: Video opened")
+        print("WORKER: Source opened")
+
+        fps = video.get(
+            cv2.CAP_PROP_FPS
+        )
+
+        if fps <= 0 or fps > 240:
+            fps = 30.0
+
+        frame_count = video.get(
+            cv2.CAP_PROP_FRAME_COUNT
+        )
+
+        is_file = (
+            self.source != 0
+        )
+
+        if (
+            is_file
+            and frame_count > 0
+        ):
+
+            self.video_duration = (
+                frame_count / fps
+            )
+
+        else:
+
+            self.video_duration = 0.0
+
+        self.duration_ready.emit(
+            self.video_duration
+        )
 
         self.status_changed.emit(
             "Video processing started"
@@ -111,7 +151,55 @@ class VideoWorker(QThread):
 
         frame_number = 0
 
+        frame_delay_ms = max(
+            1,
+            int(
+                1000 / fps
+            ),
+        )
+
         while self.running:
+
+            # --------------------------------------------------
+            # PAUSE
+            # --------------------------------------------------
+
+            if self.paused:
+
+                self.msleep(30)
+
+                continue
+
+            # --------------------------------------------------
+            # SEEK
+            # --------------------------------------------------
+
+            if self.seek_requested:
+
+                video.set(
+                    cv2.CAP_PROP_POS_MSEC,
+                    self.seek_position * 1000,
+                )
+
+                frame_number = int(
+                    self.seek_position * fps
+                )
+
+                self.seek_requested = False
+
+                self.line_crossing = None
+
+                self.zone_analyzer.reset()
+
+                self.dwell_time_analyzer.reset()
+
+                self.trajectory_analyzer.reset()
+
+                continue
+
+            # --------------------------------------------------
+            # READ FRAME
+            # --------------------------------------------------
 
             success, frame = video.read()
 
@@ -125,18 +213,31 @@ class VideoWorker(QThread):
 
             frame_number += 1
 
+            if is_file:
+
+                current_position = (
+                    frame_number / fps
+                )
+
+                current_position = min(
+                    current_position,
+                    self.video_duration,
+                )
+
+                self.position_ready.emit(
+                    current_position
+                )
+
+            # --------------------------------------------------
+            # FRAME GEOMETRY
+            # --------------------------------------------------
+
             frame_height = frame.shape[0]
             frame_width = frame.shape[1]
 
-            # -------------------------------------------------
-            # LINE POSITION
-            # -------------------------------------------------
-
-            line_y = frame_height // 2
-
-            # -------------------------------------------------
-            # ZONE
-            # -------------------------------------------------
+            line_y = (
+                frame_height // 2
+            )
 
             zone_width = int(
                 frame_width * 0.70
@@ -147,15 +248,28 @@ class VideoWorker(QThread):
             )
 
             zone_x1 = int(
-                (frame_width - zone_width) / 2
+                (
+                    frame_width
+                    - zone_width
+                ) / 2
             )
 
             zone_y1 = int(
-                (frame_height - zone_height) / 2
+                (
+                    frame_height
+                    - zone_height
+                ) / 2
             )
 
-            zone_x2 = zone_x1 + zone_width
-            zone_y2 = zone_y1 + zone_height
+            zone_x2 = (
+                zone_x1
+                + zone_width
+            )
+
+            zone_y2 = (
+                zone_y1
+                + zone_height
+            )
 
             zone = (
                 zone_x1,
@@ -164,7 +278,6 @@ class VideoWorker(QThread):
                 zone_y2,
             )
 
-            # Create line analyzer once.
             if self.line_crossing is None:
 
                 self.line_crossing = (
@@ -174,9 +287,9 @@ class VideoWorker(QThread):
                     )
                 )
 
-            # -------------------------------------------------
-            # YOLO TRACKING
-            # -------------------------------------------------
+            # --------------------------------------------------
+            # TRACKING
+            # --------------------------------------------------
 
             results = self.tracker.track(
                 frame,
@@ -184,10 +297,6 @@ class VideoWorker(QThread):
             )
 
             result = results[0]
-
-            # -------------------------------------------------
-            # OBJECT DATA
-            # -------------------------------------------------
 
             detected_class_ids = []
 
@@ -200,7 +309,8 @@ class VideoWorker(QThread):
 
                 detected_class_ids = [
                     int(class_id)
-                    for class_id in result.boxes.cls.tolist()
+                    for class_id
+                    in result.boxes.cls.tolist()
                 ]
 
                 if result.boxes.id is not None:
@@ -244,9 +354,9 @@ class VideoWorker(QThread):
                             center_y
                         )
 
-            # -------------------------------------------------
-            # OBJECT COUNTING
-            # -------------------------------------------------
+            # --------------------------------------------------
+            # OBJECT COUNTS
+            # --------------------------------------------------
 
             self.counter.reset()
 
@@ -254,45 +364,29 @@ class VideoWorker(QThread):
                 detected_class_ids
             )
 
-            counts = (
+            self.object_counts_ready.emit(
                 self.counter.get_counts()
             )
 
-            self.object_counts_ready.emit(
-                counts
-            )
-
-            # -------------------------------------------------
+            # --------------------------------------------------
             # LINE CROSSING
-            # -------------------------------------------------
+            # --------------------------------------------------
 
-            if self.line_crossing is not None:
-
-                self.line_crossing.update(
-                    track_ids,
-                    class_ids,
-                    center_ys,
-                    line_y,
-                )
-
-            entry_counts = (
-                self.line_crossing
-                .get_entry_counts()
-            )
-
-            exit_counts = (
-                self.line_crossing
-                .get_exit_counts()
+            self.line_crossing.update(
+                track_ids,
+                class_ids,
+                center_ys,
+                line_y,
             )
 
             self.line_crossing_ready.emit(
-                entry_counts,
-                exit_counts,
+                self.line_crossing.get_entry_counts(),
+                self.line_crossing.get_exit_counts(),
             )
 
-            # -------------------------------------------------
-            # ZONE ANALYTICS
-            # -------------------------------------------------
+            # --------------------------------------------------
+            # ZONE
+            # --------------------------------------------------
 
             zone_counts = (
                 self.zone_analyzer.update(
@@ -303,27 +397,17 @@ class VideoWorker(QThread):
                 )
             )
 
-            zone_entry_counts = (
-                self.zone_analyzer
-                .get_entry_counts()
-            )
-
-            zone_exit_counts = (
-                self.zone_analyzer
-                .get_exit_counts()
-            )
-
             self.zone_analytics_ready.emit(
                 zone_counts,
-                zone_entry_counts,
-                zone_exit_counts,
+                self.zone_analyzer.get_entry_counts(),
+                self.zone_analyzer.get_exit_counts(),
             )
 
-            # -------------------------------------------------
-            # DWELL TIME ANALYTICS
-            # -------------------------------------------------
+            # --------------------------------------------------
+            # DWELL TIME
+            # --------------------------------------------------
 
-            dwell_times = (
+            self.dwell_time_ready.emit(
                 self.dwell_time_analyzer.update(
                     track_ids,
                     class_ids,
@@ -331,13 +415,9 @@ class VideoWorker(QThread):
                 )
             )
 
-            self.dwell_time_ready.emit(
-                dwell_times
-            )
-
-            # -------------------------------------------------
-            # TRAJECTORY ANALYTICS
-            # -------------------------------------------------
+            # --------------------------------------------------
+            # TRAJECTORIES
+            # --------------------------------------------------
 
             self.trajectory_analyzer.update(
                 track_ids,
@@ -353,17 +433,17 @@ class VideoWorker(QThread):
                 trajectories
             )
 
-            # -------------------------------------------------
-            # YOLO ANNOTATION
-            # -------------------------------------------------
+            # --------------------------------------------------
+            # ANNOTATION
+            # --------------------------------------------------
 
-            annotated_frame = result.plot()
+            annotated_frame = (
+                result.plot()
+            )
 
-            # -------------------------------------------------
-            # DRAW TRAJECTORIES
-            # -------------------------------------------------
-
-            for trajectory in trajectories.values():
+            for trajectory in (
+                trajectories.values()
+            ):
 
                 if len(trajectory) < 2:
                     continue
@@ -374,7 +454,9 @@ class VideoWorker(QThread):
                 ):
 
                     previous_point = (
-                        trajectory[index - 1]
+                        trajectory[
+                            index - 1
+                        ]
                     )
 
                     current_point = (
@@ -388,10 +470,6 @@ class VideoWorker(QThread):
                         (0, 255, 255),
                         3,
                     )
-
-            # -------------------------------------------------
-            # DRAW ENTRY / EXIT LINE
-            # -------------------------------------------------
 
             cv2.line(
                 annotated_frame,
@@ -415,14 +493,10 @@ class VideoWorker(QThread):
                     ),
                 ),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1.8,
+                1.2,
                 (0, 255, 255),
-                4,
+                3,
             )
-
-            # -------------------------------------------------
-            # DRAW ANALYTICS ZONE
-            # -------------------------------------------------
 
             cv2.rectangle(
                 annotated_frame,
@@ -443,39 +517,28 @@ class VideoWorker(QThread):
                     ),
                 ),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                1.8,
+                1.2,
                 (255, 0, 255),
-                4,
+                3,
             )
 
-            # -------------------------------------------------
-            # DEBUG INFORMATION
-            # -------------------------------------------------
-
-            if frame_number == 1:
-
-                print(
-                    "WORKER: First frame processed:",
-                    annotated_frame.shape,
-                )
-
-                print(
-                    "WORKER: Line position:",
-                    line_y,
-                )
-
-                print(
-                    "WORKER: Zone:",
-                    zone,
-                )
-
-            # -------------------------------------------------
+            # --------------------------------------------------
             # SEND FRAME TO GUI
-            # -------------------------------------------------
+            # --------------------------------------------------
 
             self.frame_ready.emit(
                 annotated_frame
             )
+
+            # --------------------------------------------------
+            # PLAYBACK PACING
+            # --------------------------------------------------
+
+            if is_file:
+
+                self.msleep(
+                    frame_delay_ms
+                )
 
         video.release()
 
@@ -491,6 +554,55 @@ class VideoWorker(QThread):
 
         self.finished_processing.emit()
 
+    # ==========================================================
+    # PLAYBACK CONTROL
+    # ==========================================================
+
+    def pause(self):
+
+        self.paused = True
+
+        self.status_changed.emit(
+            "Playback paused"
+        )
+
+    def resume(self):
+
+        self.paused = False
+
+        self.status_changed.emit(
+            "Video processing"
+        )
+
+    def seek(
+        self,
+        position,
+    ):
+
+        if self.source == 0:
+            return
+
+        position = max(
+            0.0,
+            float(position),
+        )
+
+        if self.video_duration > 0:
+
+            position = min(
+                position,
+                self.video_duration,
+            )
+
+        self.seek_position = position
+
+        self.seek_requested = True
+
     def stop(self):
+
+        # IMPORTANT:
+        # Resume first so a paused worker can
+        # leave its pause loop and terminate.
+        self.paused = False
 
         self.running = False
