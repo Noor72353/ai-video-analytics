@@ -252,11 +252,11 @@ python -m PyInstaller --noconfirm --clean --windowed --name AI-Video-Analytics a
 
 ## Phase 9 — Final Release
 
-The project was prepared as a standalone Windows release package.
+The final Windows release was packaged and tested successfully.
 
-### Release Package
+### Portable Release
 
-The final release directory contains:
+The portable application is available in:
 
 ```text
 release/
@@ -265,3 +265,60 @@ release/
     ├── yolo11n.pt
     ├── README.md
     └── _internal/
+```
+
+The portable version can be run directly using:
+
+```text
+AI-Video-Analytics.exe
+```
+
+### Windows Installer
+
+A proper Windows installer was created using **Inno Setup**.
+
+Installer:
+
+```text
+release/
+└── AI-Video-Analytics-Setup.exe
+```
+
+The installer:
+
+* Installs the complete application on Windows.
+* Includes the YOLO model.
+* Includes all PyInstaller runtime dependencies.
+* Creates Start Menu and Desktop shortcuts.
+* Provides an uninstall option through Windows.
+* Was installed and tested successfully.
+
+The installer configuration is maintained in:
+
+```text
+AI-Video-Analytics.iss
+```
+
+### Final Release Verification
+
+The following were successfully verified:
+
+* Portable release launches correctly.
+* Windows installer completes successfully.
+* Installed application launches correctly.
+* Camera/video processing works correctly.
+* YOLO object detection works correctly.
+* Object tracking works correctly.
+* Video analytics work correctly.
+* Required PyTorch/TorchVision compatibility is included.
+* Final Git working tree is kept free of generated build artifacts.
+
+### Final Distribution
+
+For distributing the application to another Windows computer, use:
+
+```text
+release\AI-Video-Analytics-Setup.exe
+```
+
+The portable release folder is retained as an alternative distribution and backup package.
