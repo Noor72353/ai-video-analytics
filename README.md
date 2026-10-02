@@ -236,7 +236,7 @@ ai-video-analytics/
 ├── README.md
 ├── AI-Video-Analytics.iss
 └── yolo11n.pt
-```
+
 
 ---
 
@@ -249,7 +249,7 @@ The application was packaged as a standalone Windows desktop executable using Py
 The final executable was built using:
 
 python -m PyInstaller --noconfirm --clean --windowed --name AI-Video-Analytics app\main.py
-```
+
 
 The final PyInstaller application was successfully tested on Windows.
 
